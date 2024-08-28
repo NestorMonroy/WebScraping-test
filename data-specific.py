@@ -80,13 +80,105 @@ def extract_content(element):
     else:
         return ''.join(content)
 
+def extract_workflow_steps(soup):
+    """Extrae los pasos típicos para implementar un flujo de trabajo en Activiti."""
+    workflow_steps = []
+
+    # Buscar listas que puedan contener los pasos del flujo de trabajo
+    for ul in soup.find_all('ul'):
+        list_items = ul.find_all('li')
+        if len(list_items) >= 3:  # Asumimos que una lista de pasos tendrá al menos 3 elementos
+            potential_steps = [li.get_text(strip=True) for li in list_items]
+
+            # Verificar si los elementos de la lista se parecen a pasos de un flujo de trabajo
+            if any(keyword in ' '.join(potential_steps).lower() for keyword in
+                   ['bpmn', 'proceso', 'instancia', 'tarea']):
+                workflow_steps.extend(potential_steps)
+
+    # Si no se encuentran listas, buscar párrafos que puedan describir los pasos
+    if not workflow_steps:
+        paragraphs = soup.find_all('p')
+        for p in paragraphs:
+            text = p.get_text(strip=True)
+            if any(keyword in text.lower() for keyword in ['pasos', 'implementar', 'flujo de trabajo', 'activiti']):
+                workflow_steps.append(text)
+
+    return workflow_steps
+
+
+def extract_code_examples(soup):
+    """Extrae ejemplos de código para operaciones comunes en Activiti."""
+    code_examples = {
+        'deploy_process': [],
+        'start_instance': [],
+        'query_tasks': [],
+        'complete_tasks': []
+    }
+
+    # Función para limpiar el texto del código
+    def clean_code(code_text):
+        return re.sub(r'\s+', ' ', code_text).strip()
+
+    # Buscar bloques de código
+    code_blocks = soup.find_all(['pre', 'code'])
+    code_blocks += soup.find_all('span', style=lambda value: value and 'font-family:&#39;宋体&#39;' in value)
+    code_blocks += soup.find_all(style=lambda value: value and re.search(r'background:rgb\([^)]+\)', value))
+
+    for block in code_blocks:
+        code_text = clean_code(block.get_text())
+
+        # Clasificar el código según su contenido
+        if 'deploymentBuilder' in code_text or 'createDeployment' in code_text:
+            code_examples['deploy_process'].append(code_text)
+        elif 'startProcessInstanceByKey' in code_text:
+            code_examples['start_instance'].append(code_text)
+        elif 'createTaskQuery' in code_text:
+            code_examples['query_tasks'].append(code_text)
+        elif 'complete(' in code_text:
+            code_examples['complete_tasks'].append(code_text)
+
+    return code_examples
+
+
+def extract_images_and_concepts(soup):
+    """Extrae imágenes y trata de vincularlas con conceptos cercanos."""
+    image_concept_pairs = []
+
+    for img in soup.find_all('img'):
+        # Obtener la URL de la imagen
+        img_url = img.get('src', '')
+        if not img_url:
+            continue
+
+        # Buscar conceptos cercanos (párrafos anteriores y posteriores)
+        prev_concept = img.find_previous(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        next_concept = img.find_next(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+
+        concepts = []
+        if prev_concept:
+            concepts.append(prev_concept.get_text(strip=True))
+        if next_concept:
+            concepts.append(next_concept.get_text(strip=True))
+
+        image_concept_pairs.append({
+            'image_url': img_url,
+            'related_concepts': concepts
+        })
+
+    return image_concept_pairs
+
+
 def analyze_content(soup):
     """Analiza el contenido extraído para obtener información adicional."""
     analysis = {
         'headers': extract_headers(soup),
         'code_snippets': extract_code_snippets(soup),
         'key_concepts': extract_key_concepts(soup),
-        'tables': extract_tables(soup)
+        'tables': extract_tables(soup),
+        'workflow_steps': extract_workflow_steps(soup),
+        'code_examples': extract_code_examples(soup),
+        'images_and_concepts': extract_images_and_concepts(soup)
+
     }
     return analysis
 
@@ -97,9 +189,17 @@ def extract_headers(soup):
     return headers
 
 def extract_code_snippets(soup):
+    """Extrae fragmentos de código basados en estilos CSS específicos."""
     code_snippets = []
-    for code in soup.find_all('div', style=lambda value: value and 'color:rgb' in value):
-        code_snippets.append(code.text)
+
+    # Buscar elementos con font-family:'宋体'
+    for element in soup.find_all(style=lambda value: value and "font-family:'宋体'" in value):
+        code_snippets.append(element.get_text())
+
+    # Buscar elementos con background:rgb()
+    for element in soup.find_all(style=lambda value: value and re.search(r'background:rgb\([^)]+\)', value)):
+        code_snippets.append(element.get_text())
+
     return code_snippets
 
 def extract_key_concepts(soup):
@@ -159,6 +259,43 @@ def save_article_content(article_data, output_dir):
     with open(analysis_filepath, 'w', encoding='utf-8') as f:
         json.dump(article_data['analysis'], f, ensure_ascii=False, indent=2)
     print(f"Análisis del artículo guardado en {analysis_filepath}")
+
+    # Imprimir los pasos del flujo de trabajo encontrados
+    print("\nPasos del flujo de trabajo en Activiti encontrados:")
+    for step in article_data['analysis']['workflow_steps']:
+        print(f"- {step}")
+
+    # Imprimir los ejemplos de código encontrados
+    print("\nEjemplos de código para operaciones comunes en Activiti:")
+    for operation, examples in article_data['analysis']['code_examples'].items():
+        print(f"\n{operation.replace('_', ' ').title()}:")
+        for i, example in enumerate(examples, 1):
+            print(f"Ejemplo {i}:\n{example}\n")
+
+    # Descargar y guardar las imágenes
+    images_dir = os.path.join(output_dir, 'images')
+    os.makedirs(images_dir, exist_ok=True)
+    for idx, img_data in enumerate(article_data['analysis']['images_and_concepts']):
+        img_url = img_data['image_url']
+        try:
+            img_response = requests.get(img_url)
+            img_response.raise_for_status()
+            img_filename = f"image_{idx}_{hash(img_url)}.jpg"
+            img_filepath = os.path.join(images_dir, img_filename)
+            with open(img_filepath, 'wb') as img_file:
+                img_file.write(img_response.content)
+            print(f"Imagen guardada: {img_filepath}")
+            print("Conceptos relacionados:")
+            for concept in img_data['related_concepts']:
+                print(f"- {concept}")
+        except requests.RequestException as e:
+            print(f"Error al descargar la imagen {img_url}: {e}")
+
+    print("\nCódigo extraído:")
+    for snippet in article_data['analysis']['code_snippets']:
+        print(snippet)
+        print("-" * 40)
+
 
 # URL del blog para procesar
 blog_url = "https://blog.csdn.net/qq877507054/article/details/60143099"
