@@ -1,10 +1,28 @@
-import os
+import os, time, random, re, json, requests, html
 from urllib.parse import urlparse, urljoin
-
-import requests
 from bs4 import BeautifulSoup
-import re
-import json
+from PIL import Image
+from io import BytesIO
+
+# Lista de User-Agents para rotar
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36'
+]
+
+def get_random_user_agent():
+    return random.choice(USER_AGENTS)
+
+def add_delay():
+    delay = random.uniform(1, 3)  # Delay aleatorio entre 1 y 3 segundos
+    time.sleep(delay)
+
+def make_request(url):
+    headers = {'User-Agent': get_random_user_agent()}
+    add_delay()
+    return requests.get(url, headers=headers, timeout=10)
 
 def extract_headers(soup):
     print_progress(1, 7, "Extrayendo encabezados...")
@@ -55,41 +73,77 @@ def create_folder_from_url(url):
     domain = urlparse(url).netloc
     folder_name = re.sub(r'[^\w\-_\. ]', '_', domain)
     os.makedirs(folder_name, exist_ok=True)
-    return folder_name
+    img_folder = os.path.join(folder_name, 'img')
+    os.makedirs(img_folder, exist_ok=True)
+    return folder_name, img_folder
 
 
-def download_image(img_url, folder_path):
+# def download_image(img_url, img_folder, img_count, total_images):
+#     try:
+#         response = requests.get(img_url, stream=True)
+#         response.raise_for_status()
+#
+#         img = Image.open(BytesIO(response.content))
+#         img_name = f"image_{img_count}.jpg"
+#         img_path = os.path.join(img_folder, img_name)
+#
+#         img.convert('RGB').save(img_path, 'JPEG')
+#         print_progress(7, 7, f"Descargando imagen {img_count} de {total_images}...")
+#         return img_path
+#     except Exception as e:
+#         print(f"Error al descargar la imagen {img_url}: {e}")
+#         return None
+
+def download_image(img_url, img_folder):
     try:
-        response = requests.get(img_url, stream=True)
-        response.raise_for_status()
+        response = make_request(img_url)
+        if response.status_code == 200:
+            img_name = f"image_{hash(img_url)}.jpg"
+            img_path = os.path.join(img_folder, img_name)
 
-        filename = os.path.join(folder_path, os.path.basename(urlparse(img_url).path))
-        filename = re.sub(r'[^\w\-_\. ]', '_', filename)
+            img = Image.open(BytesIO(response.content))
+            img = img.convert('RGB')
+            img.save(img_path, 'JPEG')
 
-        with open(filename, 'wb') as out_file:
-            out_file.write(response.content)
-        return filename
+            return img_path
     except Exception as e:
         print(f"Error al descargar la imagen {img_url}: {e}")
-        return None
+    return None
 
-def extract_and_download_images(soup, base_url, folder_path):
-    print_progress(7, 7, "Descargando imágenes...")
+def extract_and_download_images(soup, base_url, img_folder):
+    print_progress(7, 7, "Iniciando descarga de imágenes...")
     downloaded_images = []
-    for img in soup.find_all('img'):
+    images = soup.find_all('img')
+    total_images = len(images)
+    for i, img in enumerate(images, 1):
         img_url = img.get('src')
         if img_url:
             img_url = urljoin(base_url, img_url)
-            downloaded_file = download_image(img_url, folder_path)
+            downloaded_file = download_image(img_url, img_folder, i, total_images)
             if downloaded_file:
                 downloaded_images.append(downloaded_file)
+                # Actualizar la ruta de la imagen en el HTML
+                img['src'] = os.path.relpath(downloaded_file, os.path.dirname(img_folder))
+        report_progress("Descarga de imágenes", i, total_images)
     return downloaded_images
 
+
+def clean_html_content(content):
+    # Decodificar entidades HTML
+    content = html.unescape(content)
+    # Eliminar scripts y estilos
+    soup = BeautifulSoup(content, 'html.parser')
+    for script in soup(["script", "style"]):
+        script.decompose()
+    return str(soup)
 
 def save_content_as_html(content, folder_name, url):
     print_progress(6, 7, "Guardando contenido como HTML...")
     file_name = re.sub(r'[^\w\-_\. ]', '_', url.split('/')[-1]) + '.html'
     file_path = os.path.join(folder_name, file_name)
+
+    # Limpiar el contenido HTML
+    cleaned_content = clean_html_content(content)
 
     html_content = f"""
     <!DOCTYPE html>
@@ -102,7 +156,7 @@ def save_content_as_html(content, folder_name, url):
     <body>
         <h1>Artículo extraído de <a href="{url}">{url}</a></h1>
         <div class="article-content">
-            {content}
+            {cleaned_content}
         </div>
     </body>
     </html>
@@ -113,13 +167,11 @@ def save_content_as_html(content, folder_name, url):
 
     return file_path
 
+
 def extract_specific_article_content(url):
     print_progress(0, 7, "Iniciando extracción de contenido...")
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=10)
+        response = make_request(url)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -145,21 +197,27 @@ def extract_specific_article_content(url):
             extracted_content = extract_content(content)
             analyzed_content = analyze_content(content, url)
 
-            folder_name = create_folder_from_url(url)
+            folder_name, img_folder = create_folder_from_url(url)
 
             # Descargar imágenes
             images = content.find_all('img')
             total_images = len(images)
             for i, img in enumerate(images, 1):
                 img_url = urljoin(url, img.get('src', ''))
-                img_path = download_image(img_url, folder_name)
+                img_path = download_image(img_url, img_folder)
                 if img_path:
                     img['src'] = os.path.relpath(img_path, folder_name)
                 report_progress("Descarga de imágenes", i, total_images)
+                add_delay()  # Añadir delay entre descargas de imágenes
 
             file_path = save_content_as_html(str(content), folder_name, url)
 
-            return dict(content=extracted_content, url=url, analysis=analyzed_content, saved_file_path=file_path)
+            return {
+                'content': extracted_content,
+                'url': url,
+                'analysis': analyzed_content,
+                'saved_file_path': file_path
+            }
         else:
             print(f"No se encontró el contenido del artículo en {url}")
             print("Estructura de la página:")
@@ -186,4 +244,4 @@ if __name__ == "__main__":
     if result:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
-        print("No se pudo extraer el contenido del artículo.")
+        print("No se pudo extraer el contenido del artículo")
