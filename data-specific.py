@@ -1,3 +1,5 @@
+import urllib.parse
+
 import requests
 from bs4 import BeautifulSoup
 import os
@@ -37,7 +39,7 @@ def extract_specific_article_content(url):
 
         if content:
             extracted_content = extract_content(content)
-            analyzed_content = analyze_content(content)
+            analyzed_content = analyze_content(content, url)
             return {
                 'content': extracted_content,
                 'url': url,
@@ -144,11 +146,42 @@ def extract_images_and_concepts(soup):
     """Extrae imágenes y trata de vincularlas con conceptos cercanos."""
     image_concept_pairs = []
 
+    # for img in soup.find_all('img'):
+    #     # Obtener la URL de la imagen
+    #     img_url = img.get('src', '')
+    #     if not img_url:
+    #         continue
+    #
+    #     # Buscar conceptos cercanos (párrafos anteriores y posteriores)
+    #     prev_concept = img.find_previous(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+    #     next_concept = img.find_next(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+    #
+    #     concepts = []
+    #     if prev_concept:
+    #         concepts.append(prev_concept.get_text(strip=True))
+    #     if next_concept:
+    #         concepts.append(next_concept.get_text(strip=True))
+    #
+    #     image_concept_pairs.append({
+    #         'image_url': img_url,
+    #         'related_concepts': concepts
+    #     })
+    #
+    # return image_concept_pairs
+
+def extract_images_and_concepts_2(soup, base_url):
+    """Extrae imágenes y trata de vincularlas con conceptos cercanos."""
+    image_concept_pairs = []
+
     for img in soup.find_all('img'):
         # Obtener la URL de la imagen
         img_url = img.get('src', '')
         if not img_url:
             continue
+
+        # Convertir URL relativa a absoluta si es necesario
+        if not img_url.startswith(('http://', 'https://')):
+            img_url = requests.compat.urljoin(base_url, img_url)
 
         # Buscar conceptos cercanos (párrafos anteriores y posteriores)
         prev_concept = img.find_previous(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
@@ -167,26 +200,63 @@ def extract_images_and_concepts(soup):
 
     return image_concept_pairs
 
+def create_index(soup):
+    """Crea un índice basado en los encabezados del documento."""
+    index = []
+    for header in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+        level = int(header.name[1])
+        text = header.get_text(strip=True)
+        index.append({
+            'level': level,
+            'text': text
+        })
+    return index
 
-def analyze_content(soup):
+def analyze_content(soup, base_url):
     """Analiza el contenido extraído para obtener información adicional."""
+    headers = extract_headers(soup)
+
     analysis = {
-        'headers': extract_headers(soup),
+        'headers': headers,
+        'table_of_contents': create_table_of_contents(headers),
         'code_snippets': extract_code_snippets(soup),
         'key_concepts': extract_key_concepts(soup),
         'tables': extract_tables(soup),
         'workflow_steps': extract_workflow_steps(soup),
         'code_examples': extract_code_examples(soup),
-        'images_and_concepts': extract_images_and_concepts(soup)
-
+        'images_and_concepts': extract_images_and_concepts(soup),
+        'images_and_concepts_2': extract_images_and_concepts_2(soup, base_url),
+        'index': create_index(soup)
     }
     return analysis
 
+
+# def extract_headers(soup):
+#     headers = []
+#     for header in soup.find_all(re.compile('^h[1-6]$')):
+#         headers.append((header.name, header.text.strip()))
+#     return headers
 def extract_headers(soup):
     headers = []
     for header in soup.find_all(re.compile('^h[1-6]$')):
-        headers.append((header.name, header.text.strip()))
+        level = int(header.name[1])
+        headers.append({
+            'level': level,
+            'text': header.get_text(strip=True),
+            'id': header.get('id', '')
+        })
     return headers
+
+def create_table_of_contents(headers):
+    toc = []
+    for header in headers:
+        toc.append({
+            'level': header['level'],
+            'text': header['text'],
+            'link': f"#{header['id']}" if header['id'] else ''
+        })
+    return toc
+
 
 def extract_code_snippets(soup):
     """Extrae fragmentos de código basados en estilos CSS específicos."""
@@ -290,6 +360,25 @@ def save_article_content(article_data, output_dir):
                 print(f"- {concept}")
         except requests.RequestException as e:
             print(f"Error al descargar la imagen {img_url}: {e}")
+
+
+    # Imprimir el índice
+    print("\nÍndice del documento:")
+    for item in article_data['analysis']['index']:
+        print(f"{'  ' * (item['level'] - 1)}- {item['text']}")
+
+    # Imprimir información sobre las imágenes
+    print("\nImágenes encontradas 2:")
+    for i, img in enumerate(article_data['analysis']['images'], 1):
+        print(f"\nImagen {i}:")
+        print(f"URL: {img['url']}")
+        print(f"Alt: {img['alt']}")
+        print(f"Concepto: {img['concept']}")
+
+    # Imprimir la tabla de contenidos
+    print("\nTabla de Contenidos:")
+    for item in article_data['analysis']['table_of_contents']:
+        print(f"{'  ' * (item['level'] - 1)}- {item['text']}")
 
     print("\nCódigo extraído:")
     for snippet in article_data['analysis']['code_snippets']:
