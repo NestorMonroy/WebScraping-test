@@ -7,6 +7,7 @@ import re
 import json
 
 def extract_headers(soup):
+    print_progress(1, 7, "Extrayendo encabezados...")
     headers = []
     for header in soup.find_all(re.compile('^h[1-6]$')):
         level = int(header.name[1])
@@ -18,6 +19,7 @@ def extract_headers(soup):
     return headers
 
 def create_table_of_contents(headers):
+    print_progress(2, 7, "Creando tabla de contenidos...")
     toc = []
     for header in headers:
         toc.append({
@@ -28,18 +30,15 @@ def create_table_of_contents(headers):
     return toc
 
 def extract_content(content):
-    # Implementa la lógica para extraer el contenido del elemento
-    # return element.get_text(strip=True)
+    print_progress(3, 7, "Extrayendo contenido principal...")
     return content.get_text()
 
 def analyze_content(content, url):
-    # Implementa la lógica para analizar el contenido
-    # Por ejemplo, contar palabras, identificar temas principales, etc.
+    print_progress(4, 7, "Analizando contenido...")
     word_count = len(content.get_text(strip=True).split())
     return {
         'word_count': word_count,
         "links": len(content.find_all('a')),
-        # Agrega más análisis aquí
     }
 
 def structure_overview(soup):
@@ -52,7 +51,7 @@ def structure_overview(soup):
     }
 
 def create_folder_from_url(url):
-    """Crea una carpeta basada en el dominio de la URL."""
+    print_progress(5, 7, "Creando carpeta para guardar contenido...")
     domain = urlparse(url).netloc
     folder_name = re.sub(r'[^\w\-_\. ]', '_', domain)
     os.makedirs(folder_name, exist_ok=True)
@@ -60,15 +59,11 @@ def create_folder_from_url(url):
 
 
 def download_image(img_url, folder_path):
-    """Descarga una imagen y la guarda en la carpeta especificada."""
     try:
         response = requests.get(img_url, stream=True)
         response.raise_for_status()
 
-        # Extraer el nombre del archivo de la URL
         filename = os.path.join(folder_path, os.path.basename(urlparse(img_url).path))
-
-        # Asegurarse de que el nombre del archivo sea válido
         filename = re.sub(r'[^\w\-_\. ]', '_', filename)
 
         with open(filename, 'wb') as out_file:
@@ -79,12 +74,11 @@ def download_image(img_url, folder_path):
         return None
 
 def extract_and_download_images(soup, base_url, folder_path):
-    """Extrae todas las imágenes de la página y las descarga."""
+    print_progress(7, 7, "Descargando imágenes...")
     downloaded_images = []
     for img in soup.find_all('img'):
         img_url = img.get('src')
         if img_url:
-            # Convertir URL relativa a absoluta si es necesario
             img_url = urljoin(base_url, img_url)
             downloaded_file = download_image(img_url, folder_path)
             if downloaded_file:
@@ -93,7 +87,7 @@ def extract_and_download_images(soup, base_url, folder_path):
 
 
 def save_content_as_html(content, folder_name, url):
-    """Guarda el contenido en un archivo HTML."""
+    print_progress(6, 7, "Guardando contenido como HTML...")
     file_name = re.sub(r'[^\w\-_\. ]', '_', url.split('/')[-1]) + '.html'
     file_path = os.path.join(folder_name, file_name)
 
@@ -120,6 +114,7 @@ def save_content_as_html(content, folder_name, url):
     return file_path
 
 def extract_specific_article_content(url):
+    print_progress(0, 7, "Iniciando extracción de contenido...")
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -150,22 +145,21 @@ def extract_specific_article_content(url):
             extracted_content = extract_content(content)
             analyzed_content = analyze_content(content, url)
 
-            # Crear una nueva carpeta para guardar los archivos
             folder_name = create_folder_from_url(url)
 
             # Descargar imágenes
-            downloaded_images = extract_and_download_images(content, url, folder_name)
+            images = content.find_all('img')
+            total_images = len(images)
+            for i, img in enumerate(images, 1):
+                img_url = urljoin(url, img.get('src', ''))
+                img_path = download_image(img_url, folder_name)
+                if img_path:
+                    img['src'] = os.path.relpath(img_path, folder_name)
+                report_progress("Descarga de imágenes", i, total_images)
 
-            # Guardar el contenido en un archivo HTML
-            file_path = save_content_as_html(extracted_content, folder_name, url)
+            file_path = save_content_as_html(str(content), folder_name, url)
 
-            return {
-                'content': extracted_content,
-                'url': url,
-                'analysis': analyzed_content,
-                'saved_file_path': file_path,
-                'downloaded_images': downloaded_images
-            }
+            return dict(content=extracted_content, url=url, analysis=analyzed_content, saved_file_path=file_path)
         else:
             print(f"No se encontró el contenido del artículo en {url}")
             print("Estructura de la página:")
@@ -174,6 +168,16 @@ def extract_specific_article_content(url):
     except requests.RequestException as e:
         print(f"Error al acceder a {url}: {e}")
         return None
+
+def report_progress(message, current, total):
+    progress = (current / total) * 100
+    print(f"{message}: {progress:.2f}% completado")
+
+def print_progress(step, total_steps, message):
+    """Imprime el progreso actual del proceso."""
+    print(f"[{step}/{total_steps}] {message}")
+
+
 
 # Ejemplo de uso
 if __name__ == "__main__":
