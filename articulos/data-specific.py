@@ -146,42 +146,11 @@ def extract_images_and_concepts(soup):
     """Extrae imágenes y trata de vincularlas con conceptos cercanos."""
     image_concept_pairs = []
 
-    # for img in soup.find_all('img'):
-    #     # Obtener la URL de la imagen
-    #     img_url = img.get('src', '')
-    #     if not img_url:
-    #         continue
-    #
-    #     # Buscar conceptos cercanos (párrafos anteriores y posteriores)
-    #     prev_concept = img.find_previous(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
-    #     next_concept = img.find_next(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
-    #
-    #     concepts = []
-    #     if prev_concept:
-    #         concepts.append(prev_concept.get_text(strip=True))
-    #     if next_concept:
-    #         concepts.append(next_concept.get_text(strip=True))
-    #
-    #     image_concept_pairs.append({
-    #         'image_url': img_url,
-    #         'related_concepts': concepts
-    #     })
-    #
-    # return image_concept_pairs
-
-def extract_images_and_concepts_2(soup, base_url):
-    """Extrae imágenes y trata de vincularlas con conceptos cercanos."""
-    image_concept_pairs = []
-
     for img in soup.find_all('img'):
         # Obtener la URL de la imagen
         img_url = img.get('src', '')
         if not img_url:
             continue
-
-        # Convertir URL relativa a absoluta si es necesario
-        if not img_url.startswith(('http://', 'https://')):
-            img_url = requests.compat.urljoin(base_url, img_url)
 
         # Buscar conceptos cercanos (párrafos anteriores y posteriores)
         prev_concept = img.find_previous(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
@@ -199,6 +168,37 @@ def extract_images_and_concepts_2(soup, base_url):
         })
 
     return image_concept_pairs
+
+# def extract_images_and_concepts_2(soup, base_url):
+#     """Extrae imágenes y trata de vincularlas con conceptos cercanos."""
+#     image_concept_pairs = []
+#
+#     for img in soup.find_all('img'):
+#         # Obtener la URL de la imagen
+#         img_url = img.get('src', '')
+#         if not img_url:
+#             continue
+#
+#         # Convertir URL relativa a absoluta si es necesario
+#         if not img_url.startswith(('http://', 'https://')):
+#             img_url = requests.compat.urljoin(base_url, img_url)
+#
+#         # Buscar conceptos cercanos (párrafos anteriores y posteriores)
+#         prev_concept = img.find_previous(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+#         next_concept = img.find_next(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+#
+#         concepts = []
+#         if prev_concept:
+#             concepts.append(prev_concept.get_text(strip=True))
+#         if next_concept:
+#             concepts.append(next_concept.get_text(strip=True))
+#
+#         image_concept_pairs.append({
+#             'image_url': img_url,
+#             'related_concepts': concepts
+#         })
+#
+#     return image_concept_pairs
 
 def create_index(soup):
     """Crea un índice basado en los encabezados del documento."""
@@ -225,7 +225,7 @@ def analyze_content(soup, base_url):
         'workflow_steps': extract_workflow_steps(soup),
         'code_examples': extract_code_examples(soup),
         'images_and_concepts': extract_images_and_concepts(soup),
-        'images_and_concepts_2': extract_images_and_concepts_2(soup, base_url),
+        # 'images_and_concepts_2': extract_images_and_concepts_2(soup, base_url),
         'index': create_index(soup)
     }
     return analysis

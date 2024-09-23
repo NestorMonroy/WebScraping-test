@@ -1,4 +1,3 @@
-# Importar las funciones principales de cada módulo
 from .scraper import extract_specific_article_content
 from .network import make_request
 from .content_processor import extract_content, analyze_content
@@ -20,7 +19,6 @@ __all__ = [
     'print_progress'
 ]
 
-# Opcionalmente, puedes agregar información sobre el paquete
 __version__ = '1.0.0'
 __author__ = 'Tu Nombre'
 __description__ = 'Un paquete para web scraping y extracción de contenido'

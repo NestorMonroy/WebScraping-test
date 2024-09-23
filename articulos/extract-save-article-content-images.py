@@ -94,21 +94,21 @@ def create_folder_from_url(url):
 #         print(f"Error al descargar la imagen {img_url}: {e}")
 #         return None
 
-def download_image(img_url, img_folder):
-    try:
-        response = make_request(img_url)
-        if response.status_code == 200:
-            img_name = f"image_{hash(img_url)}.jpg"
-            img_path = os.path.join(img_folder, img_name)
-
-            img = Image.open(BytesIO(response.content))
-            img = img.convert('RGB')
-            img.save(img_path, 'JPEG')
-
-            return img_path
-    except Exception as e:
-        print(f"Error al descargar la imagen {img_url}: {e}")
-    return None
+# def download_image(img_url, img_folder):
+#     try:
+#         response = make_request(img_url)
+#         if response.status_code == 200:
+#             img_name = f"image_{hash(img_url)}.jpg"
+#             img_path = os.path.join(img_folder, img_name)
+#
+#             img = Image.open(BytesIO(response.content))
+#             img = img.convert('RGB')
+#             img.save(img_path, 'JPEG')
+#
+#             return img_path
+#     except Exception as e:
+#         print(f"Error al descargar la imagen {img_url}: {e}")
+#     return None
 
 def extract_and_download_images(soup, base_url, img_folder):
     print_progress(7, 7, "Iniciando descarga de imágenes...")

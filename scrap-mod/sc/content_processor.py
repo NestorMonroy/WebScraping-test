@@ -29,7 +29,7 @@ def extract_content(content):
 
 def analyze_content(content):
     print_progress(4, 5, "Analizando contenido...")
-    word_count = len(content.split())
+    word_count = len(content.get_text(strip=True).split())
     return {
         'word_count': word_count,
         "links": len(content.find_all('a')),
